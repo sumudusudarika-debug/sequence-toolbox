@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sequence Toolbox</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+--bg:#EEF2F6;--panel:#FFFFFF;--ink:#14243A;--mute:#5B6B80;--line:#D3DCE6;--accent:#0B6E6E;
+--A:#1B7F3B;--C:#1F5FBF;--G:#B8860B;--T:#C2362B;--U:#C2362B;--warn:#9A3412}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0E1722;--panel:#162231;--ink:#E6EDF5;--mute:#93A4B8;--line:#2A3A4E;--accent:#4FC3C3;--A:#5CD184;--C:#6FA8FF;--G:#E8C45A;--T:#FF7B6E;--U:#FF7B6E;--warn:#FDBA74}}
+:root[data-theme="dark"]{--bg:#0E1722;--panel:#162231;--ink:#E6EDF5;--mute:#93A4B8;--line:#2A3A4E;--accent:#4FC3C3;--A:#5CD184;--C:#6FA8FF;--G:#E8C45A;--T:#FF7B6E;--U:#FF7B6E;--warn:#FDBA74}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.5}
+main{max-width:760px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:1.6rem;margin:0 0 4px}
+.sub{color:var(--mute);margin:0 0 20px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px}
+label{font-weight:600;display:block;margin-bottom:6px}
+textarea{width:100%;min-height:120px;resize:vertical;font:500 .95rem/1.5 "IBM Plex Mono",ui-monospace,Menlo,monospace;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px}
+textarea:focus,select:focus,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px}
+select,button{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+.msg{color:var(--warn);min-height:1.4em;margin:8px 0 0;font-size:.9rem}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px}
+.stat{border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.stat b{display:block;font-size:1.3rem}
+.stat span{color:var(--mute);font-size:.85rem}
+.out{font:500 .95rem/1.6 "IBM Plex Mono",ui-monospace,Menlo,monospace;word-break:break-all;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;min-height:2.6em}
+.head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.head h2{font-size:1rem;margin:0}
+.A{color:var(--A)}.C{color:var(--C)}.G{color:var(--G)}.T{color:var(--T)}.U{color:var(--U)}
+.note{color:var(--mute);font-size:.85rem;margin-top:6px}
+</style>
+</head>
+<body>
+<main>
+<h1>Sequence Toolbox</h1>
+<p class="sub">Paste a DNA sequence to get its composition, reverse complement, RNA and protein translation.</p>
+
+<section class="panel">
+<label for="seq">DNA sequence (plain text or FASTA)</label>
+<textarea id="seq" spellcheck="false" placeholder="ATGGCCATTGTAATGGGCCGCTGAAAGGGTGCCCGATAG"></textarea>
+<div class="row">
+<button id="example" type="button">Load example</button>
+<button id="clear" type="button">Clear</button>
+<label for="frame" style="margin:0 0 0 auto;font-weight:400">Reading frame</label>
+<select id="frame"><option value="0">Frame 1</option><option value="1">Frame 2</option><option value="2">Frame 3</option></select>
+</div>
+<p class="msg" id="msg" role="status"></p>
+</section>
+
+<section class="panel">
+<div class="stats" id="stats"></div>
+</section>
+
+<section class="panel"><div class="head"><h2>Reverse complement</h2><button type="button" data-copy="rc">Copy</button></div><div class="out" id="rc"></div></section>
+<section class="panel"><div class="head"><h2>RNA (transcribed)</h2><button type="button" data-copy="rna">Copy</button></div><div class="out" id="rna"></div></section>
+<section class="panel"><div class="head"><h2>Protein translation</h2><button type="button" data-copy="prot">Copy</button></div><div class="out" id="prot"></div>
+<p class="note">Forward strand, standard genetic code. A * marks a stop codon. Leftover bases at the end are ignored.</p></section>
+</main>
+
+<script>
+(function(){
+var BASES="TCAG", AA="FFLLSSSSYY**CC*WLLLLPPPPHHQQRRRRIIIMTTTTNNKKSSRRVVVVAAAADDEEGGGG";
+var COMP={A:"T",T:"A",G:"C",C:"G",N:"N"};
+var $=function(id){return document.getElementById(id)};
+var plain={rc:"",rna:"",prot:""};
+
+function clean(raw){
+  var lines=raw.split(/\r?\n/).filter(function(l){return l.trim().charAt(0)!==">"});
+  var s=lines.join("").replace(/\s+/g,"").toUpperCase().replace(/U/g,"T");
+  return s;
+}
+function colour(s){return s.split("").map(function(c){return '<span class="'+c+'">'+c+'</span>'}).join("")}
+function translate(s,f){
+  var p="";
+  for(var i=f;i+3<=s.length;i+=3){
+    var c=s.substr(i,3),a=BASES.indexOf(c[0]),b=BASES.indexOf(c[1]),d=BASES.indexOf(c[2]);
+    p+=(a<0||b<0||d<0)?"X":AA.charAt(16*a+4*b+d);
+  }
+  return p;
+}
+function run(){
+  var raw=$("seq").value, s=clean(raw), msg=$("msg");
+  var bad=s.replace(/[ACGTN]/g,"");
+  if(bad){msg.textContent="Ignored "+bad.length+" character(s) that are not A, C, G, T, U or N: "+Array.from(new Set(bad.split(""))).join(" ");s=s.replace(/[^ACGTN]/g,"")}
+  else msg.textContent="";
+  var n=s.length, cnt={A:0,C:0,G:0,T:0,N:0};
+  for(var i=0;i<n;i++)cnt[s[i]]++;
+  var valid=n-cnt.N, gc=valid?((cnt.G+cnt.C)/valid*100):0;
+  var items=[["Length",n+" bp"],["GC content",n?gc.toFixed(1)+"%":"-"],["A",cnt.A],["C",cnt.C],["G",cnt.G],["T",cnt.T]];
+  if(cnt.N)items.push(["N",cnt.N]);
+  $("stats").innerHTML=items.map(function(x){return '<div class="stat"><b>'+x[1]+'</b><span>'+x[0]+'</span></div>'}).join("");
+  plain.rc=s.split("").reverse().map(function(c){return COMP[c]}).join("");
+  plain.rna=s.replace(/T/g,"U");
+  plain.prot=translate(s,parseInt($("frame").value,10));
+  $("rc").innerHTML=colour(plain.rc);
+  $("rna").innerHTML=colour(plain.rna);
+  $("prot").textContent=plain.prot;
+}
+$("seq").addEventListener("input",run);
+$("frame").addEventListener("change",run);
+$("example").addEventListener("click",function(){$("seq").value=">example\nATGGCCATTGTAATGGGCCGCTGAAAGGGTGCCCGATAG";run()});
+$("clear").addEventListener("click",function(){$("seq").value="";run()});
+document.querySelectorAll("[data-copy]").forEach(function(b){
+  b.addEventListener("click",function(){
+    var t=plain[b.getAttribute("data-copy")];
+    try{navigator.clipboard.writeText(t).then(function(){b.textContent="Copied";setTimeout(function(){b.textContent="Copy"},1200)})}
+    catch(e){var r=document.createRange();r.selectNodeContents($(b.getAttribute("data-copy")));var sel=getSelection();sel.removeAllRanges();sel.addRange(r)}
+  });
+});
+run();
+})();
+</script>
+</body>
+</html>
